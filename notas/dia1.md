@@ -533,12 +533,13 @@ ConfigMap
 Secret
 Pv
 PVC
+HPA
+
+NetworkPolicy
 ResourceQuota
 LimitRange
-NetworkPolicy
 Job
 CronJob
-HPA
 Role
 RoleBinding
 ClusterRole
