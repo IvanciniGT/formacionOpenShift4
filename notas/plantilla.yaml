@@ -1,0 +1,105 @@
+# Sería un equivalente / Evolución de JSON
+# Y una alternativa a XML
+# En yaml puedo poner comentarios con el #
+# En un fichero YAML puedo tener varios documentos YAML
+# Cada documento lo separo de otro con ---
+# La realidad es que debo poner --- para marcar el principio de documento
+# Es opcional solo para el primer documento de cada fichero.
+---
+# Un documento YAML es UN NODO. Y hay 2 tipos de nodos: Escalares y De colección
+# Nodos escalares: 
+# Números:
+3
+---
+-3.5
+---
+.inf # .Inf .INF
+---
+-.inf # -.inf -.INF
+...
+# 3 puntos en ficheros lo usan los frikis. Indican final de documento.
+# Solo tiene sentido en transmisiones por red.
+---
+# Booleanos
+true    # True TRUE
+---
+false   # False FALSE
+---
+# Textos
+Hola", yo 'soy un #texto\
+---
+"Hola\", yo 'soy un #texto \\"
+---
+'Hola", yo ''soy \nun #texto \'
+---
+# 2 sintaxis adicionales para textos
+# Literal
+|4+
+     Esto es una linea de texto ' # " \n
+    
+    Y esto es otra linea de texto
+    
+    
+---
+# Folded
+>
+ Esto es una linea  ' # " \n
+ Y esto es la continuación de la linea
+---
+# Colección: Listas ordenadas
+-  item 1
+- 2
+-    True
+- 
+ - subitem1
+ - subitem2
+- 
+         - subitem1
+         - subitem2
+-   - subitem1
+    - subitem2
+---
+# Esto no es válido
+- 
+     - subitem1
+         - subitem2
+---
+# sintaxis alternativa para listas ordenadas:
+# [item1, 3, true]
+# DESACONSEJADA
+# Solo hay un caso de uso legítimo para esta sintaxis:
+[] # Lista vacia
+---
+# mapas desodenados
+# Son conjuntos clave valor:
+clave1: valor1
+clave2:     33
+clave3:         true
+clave4: 
+    - item1
+    - item5
+clave5:
+        subclave1: true
+        subclave2: 77
+---
+# Nota:
+clave1: 33
+clave2: 44
+---
+clave2: 44
+clave1: 33
+
+# Los mapas son DESORDENADOS.. 
+#eso implica que esos dos documentos on IGUALES
+---
+# sintaxis alternativa:
+# {clave1: 33, clave2: 44}
+# DESACONSEJADA
+# Solo tiene un caso de uso legítimo:
+{}
+---
+# Esas sintaxis alternativas son las que han hecho que YAML 
+# sea un SUPER SET de JSON (se ha comido a JSON)
+# Cualquier documento JSON, por definición es un documento YAML válido.
+
+{"clave1": 33, "clave2": 44}

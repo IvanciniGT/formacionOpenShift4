@@ -1,0 +1,36 @@
+# YAML es un lenguaje.. que ofrece una sinatxis.
+# Cada programa que usa yaml aporta su propio ESQUEMA.
+# Es decir, me indica que estructura debe tener el documento yaml que puedo escribir.
+# Kubernetes tiene su esquema, que hereda Openshift, tanzu...
+
+kind:           Namespace    # Tipo de objeto que queremos crear
+apiVersion:     v1 # La libreria de kubernetes en la que se define ese tipo de objeto
+                # Cada objeto se define en una librería.
+                # Kubernetes me permite añadir más tipos de objeto: CRD
+                # Y lo consigo al ir instalando nuevas librerías en kubernetes 
+                # Necesito saber en qué librería se define cada tipo de objeto
+                # La dsintaxis es: LIBRERIA/VERSION 
+                # La librería BASICA DE KUNERNETES (Node, namespace, pod, configmap, secret)
+                # No tiene nombre y solo se pone la version
+
+metadata:
+    name:       ivan # Identificador UNICO (dentro de un namespace) del objeto que creo
+    
+# El 95% de los objetos de kubernetes y CRDs tienen siempre otra etiqueta:
+#spec:
+    # El contenido ya depende de cada tipo de objeto
+# CUIDADO: SOLO DECLARO un namespace... 
+# Lo que quiero con ese namespace se lo indico luego a kubernetes
+#   kubectl create -f ./mimanifiesto.yaml
+#           ^^^AQUI VA LA ORDEN
+#   oc      create -f ./mimanifiesto.yaml
+#   oc      apply -f ./mimanifiesto.yaml
+#   kubectl delete -f ./mimanifiesto.yaml
+#   kubectl patch
+#   kubectl edit 
+#   kubectl watch
+
+---
+
+#kind:           Deployment    # Tipo de objeto que queremos crear
+#apiVersion:     apps/v1 # La libreria de kubernetes en la que se define ese tipo de objeto
