@@ -1,0 +1,49 @@
+kind:           Pod
+apiVersion:     v1
+
+metadata:
+    name:       pod-ivan
+
+spec:
+    volumes:
+        - name: datos-compartidos
+          emptyDir: {}
+        - name: datos-persistidos
+        # Problema... quién crea este fichero? El del POD? DESARROLLADOR
+        # Y ese sabe si guardo los datos en un nfs o en una cabina? o en AWS? o el id de la lun?
+        # A mi desarrollador ni me interesa, ni lo sé, ni lo quiero saber.
+        # A MI ME INTERESA EL QUE?
+        #  - TAMAÑO: 50Gb
+        #  - Encriptado
+        #  - Redundante
+        #  - ULTRARAPIDO / ULTRALENTO
+        # Y eso es lo que metemos en un PVC
+    containers:
+        -   name:               contenedor1          
+            image:              nginx:latest
+            imagePullPolicy:    IfNotPresent # Cuando se debe descargar la imagen: | Always
+            env:
+                - name:         variable1
+                  value:        valor1
+            resources:  # Limitamos el acceso al hierro
+                requests:
+                    cpu:        100m
+                    memory:     200Mi
+                limits:
+                    cpu:        2
+                    memory:     200Mi
+            volumeMounts:
+                - name:         datos-compartidos
+                  mountPath:    /var/nginx/logs
+                - name:         datos-persistidos
+                  mountPath:    /var/uploaded
+        -   name:               contenedor2     
+            image:              nginx:latest # Filebeat
+            imagePullPolicy:    IfNotPresent # Cuando se debe descargar la imagen: | Always
+            volumeMounts:
+                - name:         datos-compartidos
+                  mountPath:    /datos
+        
+
+# Volumenes
+# Service Account

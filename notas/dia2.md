@@ -312,11 +312,403 @@ Servicios en un cluster:
         IngressController: Proxy Reverso
 
 
+---
+
+# Imágenes de contenedor
+
+Qué identifica a una imágen de contenedor... 
+Cómo identificamos NOSOTROS HUMANOS una imagen de contenedor?
+
+    registry/repo:tag
+
+El registry es opcional... si no pongo registry se toma por defecto el que esté 
+configurado en el gestor de contenedores (docker, containerd, crio) de la máquina (host)
+
+    nginx:latest
+          ------
+    -----   tag
+    repo
+
+    No he puesto registry
+
+
+    artefactos.iochannel.tech/ivancinigt/iochannel-ssh-container:v1.0.0
+    -------------------------
+    registry                 -----------------------------------
+                                repo                             ------
+                                                                 tag
+
+    Eso si.. en mi caso, mi registry requiere login
+
+Las empresas suelen tener sus propios registries privados para SUS IMAGENES de contenedor:
+- Gitlab
+- Artifactory
+- Nexus
+- Quay.io.  Registry de Redhat
+        Quay es un producto también. Y puedo montarlo on Prem 
+
+Kubernetes NO TIENE un registry propio.
+Openshift SI TRAE UN REGISTRY PROPIO.
+Y podemos crear imágenes y subirlas al registry de OPENSHIFT
+
+El TAG también es opcional. Si no pongo nada, se toma por defecto: latest
+
+PERO CUIDADO: latest es un tag más, como cualquier otro.
+Los fabricante pueden decidir publicar una imagen con tag LATEST o NO.
+Es más el uso de "latest" es una muy mala práctica!
+
+Habitualmente encontramos imágenes cuyo tag lleva dentro la versión del software
+(usando para la versión: ESQUEMA SEMANTICO)
+
+    1.2.3
+    
+                    ¿Cuándo suben?
+    1   MAJOR       Breaking changes
+                    Cambios que rompen RETROCOMPATIBILIDAD (cuando quito cosas)
+    2   MINOR       Nueva funcionalidad
+                    Funcionalidad marcada como obsoleta (deprecated) 
+                        + Adicionalmente pueden venir bugfixes
+    3   PATCH       Arreglo de bugs
+
+En los tags de las imágenes encontramos:
+    - Tags FIJOS: Que siempre apuntan a la misma IMAGEN / VERSION
+    - Tags VARIABLES: Que van cambiando la imagen / version a la que apunta.
+    
+TAGS HABITUALES:
+- latest            NUNCA... Hoy me puede instalar la versión 1.2.3 y mañana sin enterarme la 2.0.0
+- 1                 NUNCA... Hoy me puede instalar la versión 1.2.3 y mañana sin enterarme la 1.3.0
+                        En esa versión vendrá NUEVA FUNCIONALIDAD que no usaré
+                        pero puede traer nuevos BUGS
+- 1.2       ****    (APTA PARA PRODUCCION) Más FLEXIBLE. La funcionalidad que necesito viene marcada por 1.2
+                    Lo que quiero es PARA ESA FUNCIONALIDAD lña verisón que tenga MAS BUGS CORREGIDOS               
+- 1.2.3             ESTA ES LA MAS CONSERVADORA (APTA PARA PRODUCCION)
+
+Y el día N quizás TODOS ELLOS apuntan a la misma imagen. 
+
+---
+
+Asignación de recursos a CONTENEDORES:
+
+                requests:               Lo que se garantiza
+                    cpu:        1
+                    memory:     1GiB
+                limits:                 Lo que se podría permitir usar dado el caso
+                    cpu:        2000m
+                    memory:     1GiB
+
+java -Xmx2000m -Xms2000m
+        ^           ^
+        maximo      inicial
+        
+    Cuál es la recomendación en JAVA: MISMO VALOR
+    Si yo sé que puedo llegar a necesitar X RAM... la pido desde el principio.
+    AQUI EN KUBERNETES IGUAL !!!!
+    El limit de RAM = REQUEST RAM
+    
+# A qué afectan los request y los limits:
+
+## Scheduler
+
+                                                  SCHEDULER
+                                                    V
+            CARACTERISTICAS     COMPROMETIDO <-> DISPONIBLE      USO       <->   SIN USAR
+            RAM     CPU         RAM     CPU      RAM     CPU     RAM     CPU     RAM     CPU
+    Nodo1    10      4                           2       0                       0       0
+        Pod nginx                 4       2                      5       2
+            En estas kubernetes SE CRUJE el primer pod de nginx.. NI COLORAO SE PONE.
+        Pod nginx2                4       2                      5       2
+    Nodo2    10      4                           3       2                       6       2
+        Pod postgres              7       2                      4       2
+
+    Pod: nginx
+    Request  4       2
+    Limit    8       3
+
+    Pod: postgresql
+    Request  7       2
+    Limit    8       3
+
+A un programa le puedo ir quitando CPU sin problema... IRA MAS LENTO
+A un programa no le puedo quitar RAM... ni un byte.. O el programa EXPLOTA
 
 
 
 
 
 
+# MEMORIA: 1GiB
+
+1 Gibibyte
+
+1 GB = 1000 MB
+1 MB = 1000 KB Antiguamente eran 1024... CAMBIO HACE 25 años para compatibilizar con los prefijos del SI
+
+Se inventaron otra medida: bibytes. Los bibytes son los operan en 1024
+
+# CPU:
+
+Podemos establer el tiempo de uso (compartido) de CPUs.
+- 1 ... Le dejo usar el equivalente a 1 core al 100%... que en un momento dado pueden ser 
+    - 2 cores al 50%
+    - 1 core al 50% y 2 cores al 25%
+- 1000m = 1 MILICORES
+- 200m ~ El equivalente a usar un core al 20% 
+
+ 
+# Asignación de Pods a nodos
+
+Quién hace ese trabajo?: Scheduler
+En base a qué?
+- Recursos (requests)
+- Afinidades/Antiafinidades
+- Toleraciones / Taints
+
+## Podemos dar hints (pistas, indicaciones) que influyan en la decisión de kubernetes (scheduler) acerca de dónde ubicar un pod.
+
+- Afinidad a nivel de host
+     ```yaml
+    nodeName: NOMBRE DE UN NODO             # Cómo lo veis???   Para cosas hiper concretas (HA)
+    nodeSelector:                           # Qué tal?          GUAY. Necesito una máquina con GPU
+        ETIQUETAS (Labels)
+    affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In            # In, NotIn, Exists, DoesNotExist, Gt and Lt
+                values:
+                - antarctica-east1
+                - antarctica-west1
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 1           # A igualdad de condiciones, la opción (NODO) que tenga más puntos gana
+            preference:
+              matchExpressions:
+              - key: another-node-label-key
+                operator: In
+                values:
+                - another-node-label-value
+    ```
+- Afinidad a nivel de pod
+
+    Quiero que pongas el pod en un nodo que también tenga ya otro pod.
+
+- Antiafinidad a nivel de pod
+
+    Quiero que pongas el pod en un nodo que no tenga ya otro pod.
+
+                    
+    MariaDB (app=bd)
+    NGINX   (app=webserver)
+    
+    El mariaDB lo tengo ya en el nodo1... 
+    
+    Si digo afinidad con nodos 
+    
+    Despliegue de nginx                                                         NODO 1 (mariadb)          NODO2(nginx)      NODO3
+    afinidad con pods que tengan etiqueta app=bd                                    √
+    afinidad con pods que tenga etiqueta app != bd                                                          √
+    antiafinidad con pods que tengan etiqueta app=bd                                                        √               √
+    antiafinidad con pods que tengan etiqueta app != bd                             √                                       √
+
+DE ESTAS TRES REGLAS (afinidad a nivel de nodo, afinidad a nivel de por y antiafinidad a nivel de pod) cuál es la que más usamos?
+
+EN "TODO" DESPLIEGUE USAMOS SIEMPRE ANTIAFINIDAD A NIVEL DE POD, como poco!
+Quiero que todo pod genere antiafinidad consigo mismo!
+```yaml
+  affinity:
+    podAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchExpressions:
+          - key: security
+            operator: In
+            values:
+            - S1
+        topologyKey: topology.kubernetes.io/zone
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+            - key: security
+              operator: In
+              values:
+              - S2
+          topologyKey: topology.kubernetes.io/zone
+```
+
+topologyKey???
+CAMBIA EL CONCEPTO:
+
+- Afinidad a nivel de pod
+
+    Quiero que pongas el pod en un nodo que comparta valor de una etiqueta concreta que te doy (TOPOLOGY KEY) con un nodo 
+    que también tenga ya otro pod con una etiqueta que cumpla una condición.
+
+- Antiafinidad a nivel de pod
+
+    Quiero que pongas el pod en un nodo  que comparta valor de una etiqueta concreta que te doy (TOPOLOGY KEY) con un nodo
+    que no tenga ya otro pod  pod con una etiqueta que cumpla una condición.
+    
+
+    Nodo1 (tipo=produccion)
+
+    Nodo2 (tipo=produccion)
+
+    Nodo3 (tipo desarrollo)
+
+    Nodo4 (tipo desarrollo)
+
+    Quiero 2 pods de tipo Agenerando antiafinidad entre si, con topologyKey: tipo
+    - Donde se monta el primer pod?
+    Se agrupan los nodos por topologyKey:
+        produccion: Nodo1 y Nodo2
+        desarrollo: Nodo3 y Nodo4
+
+    En que nodos hay un pod de tipo A? En ninguno
+    No genero antiafinidad con nadie.. y por ende me valen todos.
+        
+    Nodo1 (tipo=produccion)
+        POD A
+    Nodo2 (tipo=produccion)
+
+    Nodo3 (tipo desarrollo)
+
+    Nodo4 (tipo desarrollo)
+        
+    Segundo POD? 
+    En que nodos hay un pod de tipo A? En Nodo1... Pues en ningun nodo de ese grupo (que comparta valor de la topology Key: tipo) se monta mi pod.
+    Genero antiafinidad con todos ellos.
+    Me valdrían solo el Nodo3 y el Nodo4
+        
+Kubernetes por defecto mete algunas etiquetas en los nodos... al añadirlos al cluster:
+                beta.kubernetes.io/arch=amd64
+                beta.kubernetes.io/os=linux
+                kubernetes.io/arch=amd64
+                kubernetes.io/hostname=ip-172-31-16-45
+                kubernetes.io/os=linux
+                node-role.kubernetes.io/control-plane=
+                node.kubernetes.io/exclude-from-external-load-balancers=
+                
+kubernetes.io/arch  La arquitectura de microprocesador. Las imagenes de contenedor llevan un programa COMPILADO para un SO / ARQUITECTURA DE MICRO.
+No solo existen los procesadores intel y AMD... Si monto un cluster de kubernetes con RASPI! arm
+
+- node.kubernetes.io/exclude-from-external-load-balancers=
+    Os imaginais ésta qué hace???  Si el nodo tiene esta etiqueta no se le mandan peticiones desde el balanceador externo
+
+- kubernetes.io/hostname            Nombre del nodo.
+  Esta es la que más usamos como topologyKey
+
+No quiero que montes un WEBLOGIC en un NODO que tenga el mismo NOMBRE que otro NODO que tenga ya un WEBLOGIC
+Y como el NOMBRE de un nodo es UNICO, solo hay 1 nodo con ese nombre.
+    No quiero que montes un WEBLOGIC en un NODO que tenga ya un WEBLOGIC
+    
+Pregunta!
+Hay 2 grandes tipos de usuarios en un cluster de Kubernetes:
+- Administrador del cluster, que vela por el buen uso del cluster y su funcionamiento normal
+- Gente que instala allí cosas (Desarrollador)
+
+Quién configura las AFINIDADES/ANTIAFINIDADES? Administrador/DESARROLLADOR
+El desarrollador es el que define el POD.
+El desarrollador es el que sabe que su app necesita GPU
+Y el administrador habrá etiquetado ciertos nodos informando que tienen GPU
+Y esa información DEBE CIRCULAR!
+
+Esta guay que el desarrollador me pueda decir que su app requiere GPU.
+Pero eso evitaría que un app que no requiere GPU se monte en un nodo con GPU?
+
+    Yo desarrollo digo: POD A -> nodo (gpu=true)
+    Yo desarrollo digo: POD B -> nodo cualquiera --- Podría acabar es pod en un nodo con GPU? Si
+    
+Y YO ADMINISTRADOR DEL CLUSTER debo permitir eso? que se haga un mal uso del cluster?
+Que una máquina dotata de GPU se use para cosas que no requieran GPU? NO
+
+Y para eso Kubernetes tiene el concepto de los TINTES: Taints
+
+Las afinidades están pensadas para desarrollo, Los tintes están pensados para el Administrador
+
+Yo como administrador, configuro un HOST (NODO) para que SOLO ACEPTE PODS que TOLEREN (tolerancias) un tinte (TAINT)
+Realmente lo que hago es marcar el nodo con un tinte.
+
+El desarrollador debe añadir una toleración a ese tinte en su pod.
+
+    $ kubectl taint nodes node1 gpu=true:NoSchedule  ESTO SOLO TIENE PERMISO EL ADMINISTARDOR DEL CLUSTER (igual que poner las etiquetas: LABELS)
+    
+```yaml 
+# Desarrollador
+    tolerations:
+    - key: "gpu"
+      operator: "Equal"
+      value: "true"
+      effect: "NoSchedule"
+```
+Esto hace que se evite por accidente el mal uso (el scheduling de ciertos pods) de los nodos.
+
+Los tintes/toleraciones trabajan en conjunto con las afinidades.
+DESARROLLADOR : Yo quiero un nodo con gpu (LABEL) y acepto nodos con tinte GPU=True
+ADMINISTRADOR:  Este nodo tiene un tinte GPU=True
+
+---
+
+Con los volumenes pasa igual:
+- PV        <       ADMINISTRADOR
+- PVC       <       DESARROLLADOR
 
 
+Con los resources (requests y limits):
+- Quien los define en el POD? DESARROLLADOR
+- Pero... un ADMINISTRADOR va a permitir que un EQUIPO solocita 300Gbs de RAM? y 50 cores?
+    - Si los paga...
+      En base a lo que pague le limitaré el número de cores / ram a nivel de SU NAMESPACE 
+        RESOURCE QUOTA  \   ADMINISTRADOR
+        LIMIT RANGE     /
+
+Igual que un Namespace (en Openshift llamado PROJECT) es un objeto que definen LOS ADMINISTRADORES
+
+Y un SERVICE es un objeto pensado para DESARROLLADOR.
+---
+
+# Muchos objetos, al definirse (en su YAML) pueden incorporar ETIQUETAS: LABELS
+
+```yaml
+kind: Pod
+apiVersion: v1
+
+metadata:
+    name: mipod
+    labels:
+        mietiqueta1: mivalor1
+        mietiqueta2: mivalor2
+```
+
+Incluso desde linea de comandos podemos poner etiquetas:
+
+$ kubectl label node node17 mietiqueta1=valor1
+
+
+---
+
+## VOLUMENES en Kubernetes
+
+Cambia un poquito (MUCHO) la cosa con respecto a DOCKER
+De entrada en kubernetes hay MUCHOS TIPOS DE VOLUMENES
+- No persistentes:
+    - Compartir datos entre contenedores:                       emptyDir
+    - Inyectar ficheros/configuraciones a un contenedor         configMap   Meter ficheros/carpetas
+                                                                secret      Meter ficheros/carpetas de datos sensibles (que requieren de encriptación)
+                                                                hostPath    Mater datos del host al contenedor (monitorizar /proc)
+- Persistentes
+    - Persistir información tras la muerte de un contenedor
+
+PERO... en Kubernetes los volumenes no se definen a nivel de contenedor... sino a nivel de POD
+Pero es a nivel de contenedor que se montan en una ruta
+
+En el PVC el desarrololador (negocio) pide lo que necesita (en su lenguaje)
+En el PV el administrador registra en kubernetes un volumen que previamente haya sido creado en algún sitio (cabina, nfs, aws)
+    con unas determinadas características
+    
+Y como se liga el PVC y el PV? Eso lo hace kubernetes.. Es el tinder de los volumenes... ES EL QUE HACE MATCH !
+
+Lo que pasa es qauí luego se complica aún más... Nos falta meter el concepto de: PROVISIONADO DINAMICO DE VOLUMENES
