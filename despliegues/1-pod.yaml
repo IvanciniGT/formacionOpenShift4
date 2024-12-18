@@ -1,49 +1,72 @@
-kind:           Pod
-apiVersion:     v1
 
-metadata:
-    name:       pod-ivan
+---
 
+kind:               Pod
+apiVersion:         v1
+
+metadata:   
+    name:           pod-ivan
+    
 spec:
     volumes:
-        - name: datos-compartidos
-          emptyDir: {}
-        - name: datos-persistidos
-        # Problema... quién crea este fichero? El del POD? DESARROLLADOR
-        # Y ese sabe si guardo los datos en un nfs o en una cabina? o en AWS? o el id de la lun?
-        # A mi desarrollador ni me interesa, ni lo sé, ni lo quiero saber.
-        # A MI ME INTERESA EL QUE?
-        #  - TAMAÑO: 50Gb
-        #  - Encriptado
-        #  - Redundante
-        #  - ULTRARAPIDO / ULTRALENTO
-        # Y eso es lo que metemos en un PVC
+        - name: mivolumen
+          emptyDir: 
+            medium: Memory
+        - name: mivolumen2
+          hostPath:
+            path: /home/ubuntu/environment/datos
+            type: DirectoryOrCreate
+        - name: mivolumen3
+          persistentVolumeClaim:
+            claimName:  mi-peticion
+        - name: mivolumen4
+          configMap: 
+            name: otros-datos
     containers:
-        -   name:               contenedor1          
-            image:              nginx:latest
-            imagePullPolicy:    IfNotPresent # Cuando se debe descargar la imagen: | Always
-            env:
+        - name:         contenedor1
+          image:        nginx
+          imagePullPolicy:   IfNotPresent
+          volumeMounts:
+            - name:     mivolumen
+              mountPath: /datos
+
+        - name:         contenedor2
+          image:        fedora
+          imagePullPolicy:   IfNotPresent
+          command: 
+            - tail 
+            - -f 
+            - /dev/null
+          volumeMounts:
+            - name:     mivolumen
+              mountPath: /datosOtros
+            - name:     mivolumen2
+              mountPath: /datosOtros2
+            - name:     mivolumen3
+              mountPath: /datosOtros3
+            - name:     mivolumen4
+              mountPath: /datosOtros4
+              # Kubernetes crea en la carpeta /datosOtros4
+              # 2 ficheros:
+              # dato1, cuyo contenido será valor1
+              # nginx.conf, cuyo contenido será UN TOCHO!
+          env:
                 - name:         variable1
                   value:        valor1
-            resources:  # Limitamos el acceso al hierro
-                requests:
-                    cpu:        100m
-                    memory:     200Mi
-                limits:
-                    cpu:        2
-                    memory:     200Mi
-            volumeMounts:
-                - name:         datos-compartidos
-                  mountPath:    /var/nginx/logs
-                - name:         datos-persistidos
-                  mountPath:    /var/uploaded
-        -   name:               contenedor2     
-            image:              nginx:latest # Filebeat
-            imagePullPolicy:    IfNotPresent # Cuando se debe descargar la imagen: | Always
-            volumeMounts:
-                - name:         datos-compartidos
-                  mountPath:    /datos
-        
-
-# Volumenes
-# Service Account
+                - name:         usuario-bd
+                  valueFrom:        
+                    configMapKeyRef:
+                        name:   datos
+                        key:    usuario
+                - name:         password-bd
+                  valueFrom:        
+                    secretKeyRef:
+                        name:   datos-secretos
+                        key:    password
+                - name:         nombre-bd
+                  valueFrom:        
+                    configMapKeyRef:
+                        name:   datos
+                        key:    basedatos
+                  
+              

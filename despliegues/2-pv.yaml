@@ -1,0 +1,26 @@
+
+kind:               PersistentVolume # Objeto de ADMINISTRADOR
+apiVersion:         v1
+
+metadata:   
+    name:           mi-volumen-2 # REGISTRAR UN VOLUMEN QUE DEBE EXISTIR FUERA DE KUBERNETES
+    
+spec:
+    # Describir las características REALES del volumen que he creado
+    capacity:
+            storage: 2Gi # Cuidao.. Solo es el registro de lo que es en realidad... 
+                         # Más vale que no me equivoque al rellenarlo.
+                         # Es descriptivo
+    storageClassName: rapidito-redundante
+    accessModes:
+        - ReadWriteOnce
+        - ReadWriteMany
+        - ReadOnlyMany
+        #- ReadWriteOncePod
+
+    #TIPO
+    # Detallo cuál es ese volumen
+    hostPath:
+      path: /home/ubuntu/environment/datos2
+      type: DirectoryOrCreate
+    

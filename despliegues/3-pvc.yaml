@@ -1,0 +1,21 @@
+
+---
+kind:               PersistentVolumeClaim # Objeto de DESARROLLADOR/ NEGOCIO
+apiVersion:         v1
+
+metadata:   
+    name:           mi-peticion
+    
+spec:
+    resources:
+        requests:
+            storage: 1Gi
+    storageClassName: rapidito-redundante
+    accessModes: # Tipos de volumenes que me valen... desde el punto de vista de su compartición
+        - ReadWriteOnce # Si quiero que el volumen se pueda montar en un único nodo (y potencialmente ser usado por los pods de ese nodo) 
+        - ReadWriteMany # Si quiero que ese volumen se pueda montar en muchos pods
+        - ReadOnlyMany  # Si quiero que ese volumen se pueda montar en muchos pods pero en solo lectura
+        #- ReadWriteOncePod # Si quiero que el volumen se pueda montar en un único pod
+    # Cuidado porque esto viene limitado por el tipo de volumen REAL
+    # NFS: Se puede montar en 10 máquinas
+    # Un disco iscsi se puede montar en 10 máquinas: NORMALMENTE NO
