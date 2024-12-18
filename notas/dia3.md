@@ -198,3 +198,186 @@ Eso me da toda una estructura de carpetas y algunos comandos útiles... que pued
                                                     tar..
 Una vez monto mi app, exporto el contenedor como una imagen nueva... que es la que distribuyo.
 
+---
+
+
+# Continuación volúmenes
+
+Como veís eso de estar creando volumenes (PVC / PV) en el kubernetes?
+Al final, el desarrollador/negocio tiene que decir lo que necesita.. es decir, crear el pvc?
+Eso lo podemos automatizar? NO
+
+Y la creación del pv, que hace el administrador? Esa sería automatizable?
+
+Para crear un volumen, que hay que hacer? desde el punto de vista del administrador?
+1. Crearlo en el sitio FISICO (Cabina, AWS, AZURE,...)
+2. Registrarlo
+
+Esto sería automatizable? SI, directamente en KUBERNETES
+
+Ese es el papel de los PROVISIONADORES DINAMICOS DE VOLUMENES
+
+En todo cluster montamos (los ADMINISTRADORES) unos PROVISIONADORES DINAMICOS:
+- Un programa que monitoriza las PVC que se crean en el cluster por los desarrolladores
+- Cuando una pvc es detectada, si el storageClass que viene en la pvc es el storageClass
+  que atiende ese provisionador (CADA PROVISIONADOR SE CONFIGURA PARA ATENDER 1 o VARIOS storageclass)
+  El provisionador:
+    - Crear un volumen en el BACKEND CORRESPONDIENTE, del tamaño EXACTO que pide desarrollo
+    - Registra la PV en Kubernetes
+
+Yo como administrador, no voy a estar creando PVs. Configuro alguien que lo haga por mi.
+Y de paso, que cree el volumen REAL donde sea.
+
+Cuando contratamos un cluster de Kubernetes a un cloud:
+- AWS
+- AZURE
+En ese cluster de kubernetes que el CLOUD me monta, ya me vienen muchas cosas:
+- BALANCEADOR DE CARGA EXTERNO
+- INGRESS CONTROLLER
+- PROVISIONADOR DINAMICO DE VOLUMENES que trabaja contra el CLOUD como soporte físico de los mismos
+Cuando montamos un cluster de kubernetes on prem, me toca a mi montar un PROVISIONADOR DE VOLUMENES
+
+Con OPENSHIFT, mismo rollo.
+Openshift lo puedo contratar sobre AWS.. y me trae todo esto preconfigurado (para trabajar contra AWS)
+Openshift lo puedo contratar sobre AZURE.. y me trae todo esto preconfigurado (para trabajar contra AZURE)
+Si lo monto en PREM... ya me toca a mi.
+Si en lugar de Openshift monto TANZU (la distro de kubernetes de vmware) me vendrá en automático un provisionador 
+de volumenes que trabaje en automático sobre VMWARE (vSAN)
+
+---
+
+# ServiceAccount
+
+CREDENCIALES/CUENTA que puedo usar apra comunicarme con la API DE KUBERNETES.
+Ese service account puedo usarlo YO (HUMANO) o un programa.
+De hecho, quien lo usa siempre es un programa.
+    kubectl --serviceAccount--> apiServer
+    oc      --serviceAccount--> apiServer
+    kubernetes-dashboard    --serviceAccount--> apiServer
+    openshift-dashboard     --serviceAccount--> apiServer
+
+Los service accounts quien los usa son PROGRAMAS... SIEMPRE!
+    Como los de arriba (oc, dashboard)
+    o por ejemplo: NFS PROVISIONER
+
+Asociado a ese concepto: SERVICE ACCOUNT: Nombre
+```yaml
+
+apiVersion: v1
+kind: ServiceAccount
+
+metadata:
+  name: release-name-nfs-subdir-external-provisioner
+```
+
+Kubernetes genera un TOKEN DE SEGURIDAD.
+
+# Role
+
+Un role es un nombre, que tiene asociados una serie de permisos dentro de un namespace
+
+Permiso? VERBO que puedo aplciar sobre un TIPO DE OBJETO
+
+
+```
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: leader-locking-release-name-nfs-subdir-external-provisioner
+rules:
+  - apiGroups: [""]
+    resources: ["endpoints"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["pod"]
+    verbs: ["get" "create", "update", "patch"]
+```
+# RoleBinding
+
+La asocacion de un ROLE a un SERVICE ACCOUNT
+
+```yaml
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: leader-locking-release-name-nfs-subdir-external-provisioner
+subjects:
+  - kind: ServiceAccount
+    name: release-name-nfs-subdir-external-provisioner
+    namespace: provisionador
+roleRef:
+  kind: Role
+  name: leader-locking-release-name-nfs-subdir-external-provisioner
+  apiGroup: rbac.authorization.k8s.io
+```
+
+# ClusterRole
+
+Un cluster role es un nombre, que tiene asociados una serie de permisos a nivel de cluster
+
+Permiso? VERBO que puedo aplciar sobre un TIPO DE OBJETO
+```yaml
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: release-name-nfs-subdir-external-provisioner-runner
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "update"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "update", "patch"]
+```
+
+# ClusterRoleBinding
+
+La asocacion de un CLUSTERROLE a un SERVICE ACCOUNT
+
+Cuando un programa hace una petición al API SERVER:
+    - Quiero hacer un CREATE de un PV
+El apiServer, revisa que en los ROLES o CLUSTER ROLES asociados (BINDINGs) al SERVICE ACCOUNT
+que el programa está mandando, esté declarado ese verbo para ese tipo de objeto.
+
+
+
+
+
+
+
+
+
+---
+
+Kubernetes SOLO TIENE EL CONCEPTO DE SERVICE ACCOUNT
+
+En Openshift hay otro concepto ADICIONAL (Otro tipo de objeto): USER
+Un USER de Openshift es una extensión del objeto SERVICE ACCOUNT de kubernetes
+
+Kubernetes no obliga a los pods a declarar un service account.
+Solo deben llevarlo, aquellos pods que tenga un contenedor, 
+que ejecute un programa que tenga que hablar con el API SERVER
+
+Openshift SI OBLIGA a que todo pod tenga un service account
+
+JENKINS
+    JOB ---> Ese job quiero que se ejecute en su propio POD
+    Y Jenkins debe crear un POD para el job... monitorizarlo
+    Y cuando acabe el JOB, borrarlo
+    
+    Jenkins encesita comunicación con el APISERVER
+
+ANSIBLE TOWER
+    Cuando ejecuta un playbook en Kubernetes, ese playbook lo ejecuta dentro de un JOB
+    Y ese JOB Ansible Tower debe crearlo ... y borrarlo después.
+    
+    Ansible Tower necesita un service account
