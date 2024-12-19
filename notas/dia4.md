@@ -106,6 +106,50 @@ En este caso, no me interesa definir PVCs.. Sino PLANTILLAS de PVCs
 Solo quiero un PVC -> 1 PV que comparten los programas
 
 
+# Más diferencias entre ellos
+
+Cuando trabajo con un DEPLOYMENT, a TODOS LOS EFECTOS, los pods son intercambiables entre si,
+    ya que son iguales.
+Cuando trabajo con un STATEFULSET, a TODOS LOS EFECTOS, los pods NO SON SIEMPRE INTERCAMBIABLES entre si.
+    ya que son distintos... tiene datos distintos.. y tienen su personalidad.
+    Esto implica que a veces me vale cualquiera... pero otras veces NO.
+    Y en esas OTRAS VECES, he de poder elegir a CUAL DE ELLOS QUIERO INVOCAR.... evidentemente sin usar una IP.
+    Necesito un fqdn que apunte a CADA POD del statefulset...
+    En paralelo con un fqdn que balancee entre ellos.
+
+## ELASTICSEARCH
+
+Es una herramienta distribuida que opera en cluster.
+Distribuida? que distintos componentes hacen distintas funciones.
+Los nodos tiene ROLES: maestros, datos, ingesta, machine learning, coordinadores....
+
+Los maestros son los que orquestan/monitorizan un cluster. De hecho en ES solo hay 1 maestro cada vez.
+Pero necesito al menos configurar 3 nodos de tipo maestro. 
+(potenciales maestros, de los que luego se toma SOLO 1 para el papel de maestro)
+
+Los nodos adicionales (data, ingesta, ml) se quieren juntar con los nodos maestros para formar un cluster.
+Antaño, la formación de un cluster se hacía mediante una comunicación BROADCAST en RED (grito al aire).
+Más adelante se cambio por comunicaciones UNICAST (de uno a uno)
+
+Configuramos los NODOS adicionales para que al arrancar intenten conectar con ALGUNO DE LOS MAESTROS... 
+y se presenten. A cuál de los 3 se debe conectar CADA NODO ADICIONAL? A CUALQUIERA
+En cuantito se presente a uno, ese UNO le presentará al resto de amiguitos.
+
+    MAESTRO 1
+    MAESTRO 2               < BALANCEO que apunte a cualquiera  <   DATA
+    MAESTRO 3                      (KUBERNETES: SERVICE)
+
+Los maestros, también tienen que presentarse entre si.
+Me vale para los maestros configurar que se presenten a esa misma IP de balanceo... 
+que le redirigirá a alguno de ellos? NO.. por qué?
+    Porque puedo tener la mala suerte de que el MAESTRO 1, al llamar al la IP DE BALANCEO de maestros
+    la petición por detrás sea enviada a él mismo... Y entonces se queda OUT del cluster
+
+En un cluster de kubernetes la configuración es:
+    MAESTRO1 -> MAESTRO2 y MAESTRO3
+    MAESTRO2 -> MAESTRO3
+    El resto de nodos a cualquier maestro disponible
+
 ---
 
 BBDD puede instalarse de 3 formas:
@@ -144,3 +188,26 @@ TRATAR DE GARANTIZAR UN DETERMINADO TIEMPO DE SERVICIO PACTADO CONTRACTUALMENTE 
 - 99.999%       MU POQUITO                              v   €€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€
 
 Esto es la carta a los reyes magos.
+
+---
+
+# Charts de HELM. Consideraciones a tener en cuenta:
+
+- Contraseñas. NUNCA ALEATORIAS y tampoco en el fichero
+    No quiero una contraseña en claro en un fichero de texto... que además ese fichero irá a un sistema de control de versión.
+    Alternativa GUAY: Crear nosotros un secreto con la contraseña previamente
+                      Y usar el secreto en el values.yaml
+                      La realidad es que los SECRETOS no los solemos crear desde archivos de manifiesto.
+                      Algunos objetos pueden ser creados directamente desde comando, sin necesidad de un archivo YAML.
+        
+- PVC: Nunca quiero que el chart genere mis PVC... los quiero crear yo a manita!
+  ¿Cuál es el problema? Estos son trucos de perro viejo.
+  El problema es que si HELM es quien crea las pvc, HELM puede borrarlas.
+    Y como alguien la lie y en lugar de hacer un 
+        DIA 1: HELM INSTALL
+        DIA 2: HELM UPDATE cuando haya una actualización
+        DIA 3: HELM UNINSTALL
+                    ---> BORRA LAS PVC... Y entonces estoy bien jodido
+                        Con suerte en el backend real no se habrán borrado los datos...
+                        Aunque puede ser que si!
+        DIA 1: HELM INSTALL

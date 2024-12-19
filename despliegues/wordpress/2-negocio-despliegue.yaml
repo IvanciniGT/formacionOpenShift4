@@ -1,18 +1,5 @@
 
----
-kind:               PersistentVolumeClaim # Objeto de DESARROLLADOR/ NEGOCIO
-apiVersion:         v1
 
-metadata:   
-    name:           volumen-base-datos
-    
-spec:
-    resources:
-        requests:
-            storage: 1Gi
-    storageClassName: rapidito-redundante
-    accessModes: 
-        - ReadWriteOnce 
 ---
 kind:               PersistentVolumeClaim # Objeto de DESARROLLADOR/ NEGOCIO
 apiVersion:         v1
@@ -24,7 +11,7 @@ spec:
     resources:
         requests:
             storage: 1Gi
-    storageClassName: rapidito-redundante
+    storageClassName: volumen-guay
     accessModes: 
         - ReadWriteOnce 
 ---
@@ -47,54 +34,138 @@ data:
     usuario:    miusuario
 ---
 
-kind:           Pod
+kind:           Service
 apiVersion:     v1
 
 metadata:
-    name:       bd
-    
-spec:
-    volumes:
-        - name:                 volumen-persistente
-          persistentVolumeClaim:
-            claimName:          volumen-base-datos
-    containers:
-        - name:                 mariadb
-          image:                mariadb
-          imagePullPolicy:      IfNotPresent
-          env:
-            - name:             MARIADB_ROOT_PASSWORD
-              valueFrom:
-                seecretKeyRef:
-                    configMap:  datos-bd-secretos
-                    key:        passwordRoot
-            - name:             MARIADB_DATABASE
-              valueFrom:
-                configMapKeyRef:
-                    configMap:  datos-bd
-                    key:        baseDatos
-            - name:             MARIADB_USER
-              valueFrom:
-                configMapKeyRef:
-                    configMap:  datos-bd
-                    key:        usuario
-            - name:             MARIADB_PASSWORD
-              valueFrom:
-                seecretKeyRef:
-                    configMap:  datos-bd-secretos
-                    key:        passwordUsuario
+    name:       servicio-bd # Esto es el fqdn que se registra en el dns de kubernetes
+                            # Apuntando a una IP de balanceo que Kubernetes me genera
+                            # Esa IP balanceará entre aquellos pods que:
+                            # - Contengan la etiqueta que vamos a definir ahora AQUI
+                            # - Que estén en estado READY
 
-          volumeMounts:
-            -   name:           volumen-persistente
-                mountPath:      /var/lib/mysql
-          resources:
-            requests:
-                memory: 500Mi
-                cpu:    100m
-            limits:
-                memory: 500Mi
-                cpu:    1
-          #afinidades
+spec:
+    type:       ClusterIP   # Comunicaciones internas del cluster
+    
+                # NodePort  # Era un cluster IP + EXPONE los puertos del servicio (IP DE BALANCEO)
+                            # en TODOS LOS NODOS DEL CLUSTER... en un puerto por encima del 30000
+                # LoadBalancer # Es un NodePort + Configuración automatica de un BALANCEADOR EXTERNO compatible con Kubernetes
+    selector:   # Etique de los pods que de estar READY entran en el balanceo de la IP de balanceo (CLUSTERIP)
+        app:    mariadb
+    ports:      # Puertos que abro en la IP de balanceo
+        - port: 3306        # Puerto de la IP de balanceo
+          targetPort: 3306  # Puerto de los pods
+---
+
+kind:           Service
+apiVersion:     v1
+
+metadata:
+    name:       servicio-wordpress # Esto es el fqdn que se registra en el dns de kubernetes
+                            # Apuntando a una IP de balanceo que Kubernetes me genera
+                            # Esa IP balanceará entre aquellos pods que:
+                            # - Contengan la etiqueta que vamos a definir ahora AQUI
+                            # - Que estén en estado READY
+
+spec:
+    type:       LoadBalancer   # ClusterIPComunicaciones internas del cluster
+    
+                # NodePort  # Era un cluster IP + EXPONE los puertos del servicio (IP DE BALANCEO)
+                            # en TODOS LOS NODOS DEL CLUSTER... en un puerto por encima del 30000
+                # LoadBalancer # Es un NodePort + Configuración automatica de un BALANCEADOR EXTERNO compatible con Kubernetes
+    selector:   # Etique de los pods que de estar READY entran en el balanceo de la IP de balanceo (CLUSTERIP)
+        app:    wordpress
+    ports:      # Puertos que abro en la IP de balanceo
+        - port: 80        # Puerto de la IP de balanceo
+          targetPort: 80  # Puerto de los pods
+          nodePort:   30081 # Puedo no ponerlo... en ese caso se toma uno random.
+                            # Si trabajo con servicio LOADBALANCER REAL, no es necesario ponerlo.
+                            # Kubernetes, al configurar el balanceador externo, ya le poner el puerto que haya elegido.
+# El WP lo quiero atacar desde fuera del cluster... Y para ello tengo 3 opciones:
+# - NodePort
+# - LoadBalancer
+# - Mediante un INGRESS
+# En nuestro cluster no tenemos Ingress-controller... ni podemos montarlo.
+# El ingressController usa un servicio de tipo LOAD_BALANCER
+# Pero para tener un servicio de tipo LOAD_BALANCER necesito un BALANCEADOR EXTERNO COMPATIBLE: METALLB
+# Y ese nos sirve para instalacione son PREM. Pero nuestro cluster lo tenemos montado sobre máquinas alquiladas a AWS.
+# Cuidado... a AWS le puedo contratar un CLUSTER de kubernetes / OPENSHIFT
+# Y por desgracia METALLB no se lleva bien con la RED de AWS
+---
+
+kind:           StatefulSet
+apiVersion:     apps/v1
+
+metadata:
+    name:       bd
+
+spec:
+    replicas:   1
+    selector:
+        matchLabels:
+            app:    mariadb
+    serviceName:    servicio-bd
+            # Por qué esto es obligatorio en los StatefulSet.. y en los deployments NO PUEDO NI PONERLO OPCIONAL?
+            # Genera una entrada en DNS de kubernetes para cada POD que se cree, del tipo:
+                # FQDN(entradas que se dan de alta en el DNS de kubernetes)
+                # bd-0.servicio-bd      IP del POD 1
+                # bd-1.servicio-bd      IP del POD 2
+                # bd-2.servicio-bd      IP del POD 3
+                # servicio-bd           IP BALANCEO... que por detras lleva a cualquier de las IPS de los PODS
+    volumeClaimTemplates:
+        - metadata:   
+            name:           volumen-base-datos
+        
+          spec:
+            resources:
+                requests:
+                    storage: 1Gi
+            storageClassName: volumen-guay
+            accessModes: 
+                - ReadWriteOnce 
+    template:
+        metadata:
+            name:       plantilla-bd
+            labels:
+                app:    mariadb
+        spec:
+            containers:
+                - name:                 mariadb
+                  image:                mariadb
+                  imagePullPolicy:      IfNotPresent
+                  env:
+                    - name:             MARIADB_ROOT_PASSWORD
+                      valueFrom:
+                        secretKeyRef:
+                            name:  datos-bd-secretos
+                            key:        passwordRoot
+                    - name:             MARIADB_DATABASE
+                      valueFrom:
+                        configMapKeyRef:
+                            name:  datos-bd
+                            key:        baseDatos
+                    - name:             MARIADB_USER
+                      valueFrom:
+                        configMapKeyRef:
+                            name:  datos-bd
+                            key:        usuario
+                    - name:             MARIADB_PASSWORD
+                      valueFrom:
+                        secretKeyRef:
+                            name:  datos-bd-secretos
+                            key:        passwordUsuario
+        
+                  volumeMounts:
+                    -   name:           volumen-base-datos
+                        mountPath:      /var/lib/mysql
+                  resources:
+                    requests:
+                        memory: 500Mi
+                        cpu:    100m
+                    limits:
+                        memory: 500Mi
+                        cpu:    1
+                  #afinidades
 ---
 
 kind:           Deployment
@@ -125,21 +196,21 @@ spec:
                       imagePullPolicy:      IfNotPresent
                       env:
                         - name:             WORDPRESS_DB_HOST
-                          value:            # TODO: NOMBRE DEL SERVICIO DE MARIADB
+                          value:            servicio-bd # Esto apunta a la IP de balanceo.. que redirige a un POD READY con etiqueta MariaDB
                         - name:             WORDPRESS_DB_NAME
                           valueFrom:
                             configMapKeyRef:
-                                configMap:  datos-bd
+                                name:  datos-bd
                                 key:        baseDatos
                         - name:             WORDPRESS_DB_USER
                           valueFrom:
                             configMapKeyRef:
-                                configMap:  datos-bd
+                                name:  datos-bd
                                 key:        usuario
                         - name:             WORDPRESS_DB_PASSWORD
                           valueFrom:
-                            seecretKeyRef:
-                                configMap:  datos-bd-secretos
+                            secretKeyRef:
+                                name:  datos-bd-secretos
                                 key:        passwordUsuario
                       volumeMounts:
                         -   name:           volumen-persistente
@@ -152,3 +223,26 @@ spec:
                             memory: 500Mi
                             cpu:    1
                       #afinidades
+---
+
+kind:           HorizontalPodAutoscaler
+apiVersion:     autoscaling/v2
+
+metadata:
+    name:       wordpress
+
+spec:
+    scaleTargetRef:
+        name:           wordpress
+        kind:           Deployment
+        apiVersion:     apps/v1
+    minReplicas: 2
+    maxReplicas: 4
+    metrics:
+        - type: Resource
+          resource:
+            name: cpu
+            target: 
+                type: Utilization
+                averageUtilization: 50
+
