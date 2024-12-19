@@ -1,0 +1,154 @@
+
+---
+kind:               PersistentVolumeClaim # Objeto de DESARROLLADOR/ NEGOCIO
+apiVersion:         v1
+
+metadata:   
+    name:           volumen-base-datos
+    
+spec:
+    resources:
+        requests:
+            storage: 1Gi
+    storageClassName: rapidito-redundante
+    accessModes: 
+        - ReadWriteOnce 
+---
+kind:               PersistentVolumeClaim # Objeto de DESARROLLADOR/ NEGOCIO
+apiVersion:         v1
+
+metadata:   
+    name:           volumen-wordpress
+    
+spec:
+    resources:
+        requests:
+            storage: 1Gi
+    storageClassName: rapidito-redundante
+    accessModes: 
+        - ReadWriteOnce 
+---
+kind:           Secret
+apiVersion:     v1
+
+metadata:
+    name:       datos-bd-secretos
+data:
+    passwordRoot:       cGFzc3dvcmQ=
+    passwordUsuario:    cGFzc3dvcmQ=
+---
+kind:           ConfigMap
+apiVersion:     v1
+
+metadata:
+    name:       datos-bd
+data:
+    baseDatos:  mibd
+    usuario:    miusuario
+---
+
+kind:           Pod
+apiVersion:     v1
+
+metadata:
+    name:       bd
+    
+spec:
+    volumes:
+        - name:                 volumen-persistente
+          persistentVolumeClaim:
+            claimName:          volumen-base-datos
+    containers:
+        - name:                 mariadb
+          image:                mariadb
+          imagePullPolicy:      IfNotPresent
+          env:
+            - name:             MARIADB_ROOT_PASSWORD
+              valueFrom:
+                seecretKeyRef:
+                    configMap:  datos-bd-secretos
+                    key:        passwordRoot
+            - name:             MARIADB_DATABASE
+              valueFrom:
+                configMapKeyRef:
+                    configMap:  datos-bd
+                    key:        baseDatos
+            - name:             MARIADB_USER
+              valueFrom:
+                configMapKeyRef:
+                    configMap:  datos-bd
+                    key:        usuario
+            - name:             MARIADB_PASSWORD
+              valueFrom:
+                seecretKeyRef:
+                    configMap:  datos-bd-secretos
+                    key:        passwordUsuario
+
+          volumeMounts:
+            -   name:           volumen-persistente
+                mountPath:      /var/lib/mysql
+          resources:
+            requests:
+                memory: 500Mi
+                cpu:    100m
+            limits:
+                memory: 500Mi
+                cpu:    1
+          #afinidades
+---
+
+kind:           Deployment
+apiVersion:     apps/v1
+
+metadata:
+    name:       wordpress
+
+spec:
+    replicas: 1
+    selector:
+        matchLabels:
+            app:    wordpress # ESTO DEBE COINCIDIR CON (1)
+
+    template:
+            metadata:
+                name:       plantilla-wordpress
+                labels:
+                    app:    wordpress                 # (1)
+            spec:
+                volumes:
+                    - name:                 volumen-persistente
+                      persistentVolumeClaim:
+                        claimName:          volumen-wordpress
+                containers:
+                    - name:                 wordpress
+                      image:                wordpress
+                      imagePullPolicy:      IfNotPresent
+                      env:
+                        - name:             WORDPRESS_DB_HOST
+                          value:            # TODO: NOMBRE DEL SERVICIO DE MARIADB
+                        - name:             WORDPRESS_DB_NAME
+                          valueFrom:
+                            configMapKeyRef:
+                                configMap:  datos-bd
+                                key:        baseDatos
+                        - name:             WORDPRESS_DB_USER
+                          valueFrom:
+                            configMapKeyRef:
+                                configMap:  datos-bd
+                                key:        usuario
+                        - name:             WORDPRESS_DB_PASSWORD
+                          valueFrom:
+                            seecretKeyRef:
+                                configMap:  datos-bd-secretos
+                                key:        passwordUsuario
+                      volumeMounts:
+                        -   name:           volumen-persistente
+                            mountPath:      /var/lib/mysql
+                      resources:
+                        requests:
+                            memory: 500Mi
+                            cpu:    100m
+                        limits:
+                            memory: 500Mi
+                            cpu:    1
+                      #afinidades

@@ -1,0 +1,141 @@
+kind:           Namespace
+apiVersion:     v1
+
+metadata:
+    name:       ivan-osuna
+---
+kind:           ServiceAccount
+apiVersion:     v1
+
+metadata:
+    name:       wordpress
+    #namespace:  ivan-osuna         kubectl | oc apply -f fichero -n ivan-osuna
+---
+kind:           Role
+apiVersion:     rbac.authorization.k8s.io/v1
+
+metadata:
+    name:       wordpress
+
+rules:
+    - apiGroups:    ["*"]
+      resources:    ["*"]
+      verbs:        ["*"]
+---
+kind:           RoleBinding
+apiVersion:     v1
+
+metadata:
+    name:       wordpress
+
+subject:
+    -   kind:   ServiceAccount
+        name:   wordpress
+roleRef:
+    apiGroup:   rbac.authorization.k8s.io/v1
+    kind:       Role
+    name:       wordpress
+---
+kind:           ResourceQuota   # Limita el global/total de UN ALGO de un namespace
+                                # En total, dentro de ese namespace no se pueden usar más de 4Gbs de RAM 
+apiVersion:     v1
+
+metadata:
+    name:       wordpress
+spec:
+    hard:
+        requests.cpu: "500m"
+        requests.memory: 1Gi
+        requests.storage: "5Gi"
+        limits.cpu: "2"
+        limits.memory: 1Gi
+        #pod: 10
+        #services: 5
+        #persistentvolumeclaims: 3
+
+
+# En total no te dejo usar más de 8Gbs de RAM y 10 cores. ESTO ES LO IMPORTANTE.
+---
+#kind:           LimitRange   # Limita cada ALGO que creo en un namespace
+                             # En este namespace no puede crear UN POD que requiera más de 2Gbs de RAM
+#apiVersion:     v1
+
+#metadata:
+#    name:       wordpress
+    
+#spec:
+#  limits:
+#  - default: # this section defines default limits
+#      cpu: 500m
+#    defaultRequest: # this section defines default requests
+#      cpu: 500m
+#    max: # max and min define the limit range
+#      cpu: "1"
+#    min:
+#      cpu: 100m
+#    type: Container
+
+# Te limito cómo puedes hacer uso de los recursos que te he declarado en el ResourceQuota
+# Y no puedes crear un pod que necesite los 10 cores.
+# Lo que pretendo evitar es que se haga un mal uso de las máquinas (NODOS)
+# Si me crean pods muy grandes:
+# - Me dificulta MUCHO EL SCHEDULING
+# - Si todo el mundo hace eso, me pueden quedar TROCITOS de muchas máquinas inservibles
+#   MAQUINA 16Gbs... Y me sueltan un pod con 14 Gbs... Y los 2Gbs esos?
+# Habitualmente lño que definimos es un LimitRange por defecto al cluster
+# Y solo si un ns necesita unidades más grandes, que lo pidan y se lo abro en su ns.
+
+---
+
+# Me instalan programas en el cluster
+# Permito que esos programas se comuniquen con quien quieran?
+# Esto montando un entorno de desarrollo... Habrá también un entorno de prod
+# Dejo al Apache que ataque a la BBDD de producción desde desarrollo?
+# Quien se puede comunicar con este NS? APACHE / MARIADB
+# Para esto están los NetworkPolicy
+
+#kind:           NetworkPolicy   # Limita el global/total de UN ALGO de un namespace
+                                # En total, dentro de ese namespace no se pueden usar más de 4Gbs de RAM 
+#apiVersion:     networking.k8s.io/v1
+
+#metadata:
+#    name:       wordpress
+#spec:
+#    podSelector: {}
+#    policyTypes:
+#        - Ingress
+#    ingress:
+#        - from: 
+#            - podSelector:
+#                matchLabels:
+#                  app: ingress-controller
+#          ports:
+#            - port: 80
+#              protocol: TCP
+              
+#            - port: 443
+#              protocol: TCP
+              
+#        - from: 
+#            - podSelector: {}
+#          ports:
+#            - port: 3306
+#              protocol: TCP
+# Mantener POLITICAS DE RED ES UNA TAREA MUY COMPLEJA.
+# Esto da kubernetes -> Openshift
+# Para cluster reales (MAS GORDITOS) esto no vale.
+# Linux permite controlar permisos a nivel de usuario de los ficheros, programas, puerto.
+# SI ... pero es inmantenible.
+# Y en entornos donde la seguridad es CRITICA, necesitamos de formas ALTERNATIVAS, MEJORES de controlar esto
+# - SELinux: PERMISSIVE | ENFORCED
+#       Lo habitual es instalar un sistema, y activar el modo PERMISSIVE
+#       SELinux (Security Enhanced for Linux) permite todo, pero...
+#           Va registrando todos los movimientos/acceso... que ocurren en la máquina
+#           Luego puedo obtener un listado de ellos.
+#           Y ese listado, de cada cosa que hay ahí, la puedo aplicar/ignorar.
+#           Una vez aplicado, lo pongo en modo ENFORCED
+# - AppArmor
+
+# El que se encarga de aplicar los NetworkPolicy es el Driver de Red Virtual...
+# Y no todos los drivers de red virtual soportan NetworkPolicies
+# Flannel no soporta network policies
